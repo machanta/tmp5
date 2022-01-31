@@ -82,6 +82,7 @@ $(document).ready(function() {
  var raciGroups = [];
  var currentUser = null;
  var inProgressTasks = [];
+ var transitions = [];
  var loadIssues = function(data) {
     //RED.opsProjects = data;
    // console.log(JSON.stringify(data));
@@ -90,7 +91,9 @@ $(document).ready(function() {
             
    // });
 }
-
+var loadTransitions = function(data) {
+    transitions = data;
+}
 var loadUsers = function(data) {
     
    jiraUsers = data;
@@ -110,7 +113,16 @@ var loadOpsModel=function(data) {
     loadModel(data[0].data, data[0]._id, "User1");
   }
 }
-
+var finishUpdate = function(data) {
+    if (data) {
+        getData('/jira/getIssues', function(data) { 
+            issues = data;
+            configureTasks();
+            $('#fmi-show-issue').show();
+            $('#fmi-start-issue').hide();
+        });
+    }
+}
 var issueCreated=function(data) {
     if (data) {
         getData('/jira/getIssues', function(data) { 
@@ -142,6 +154,7 @@ $('#fmi-ops-project-select').on('change', function(){
     getData('/jira/getIssues', loadIssues);
     getData('/system/getOpsModels', loadOpsProjects);
     getData('/jira/getUsers', loadUsers);
+   
     if(upload){
         upload.addEventListener("change", function(evt){
             var files = evt.target.files;
@@ -203,44 +216,7 @@ var loadModel = function(sheets, name,user) {
             
        cellMousedown : function(cell,position,sheet,context) {
             if (position.c == 0 && sheet.order == 0 && !opsNew) {
-                $('#fmi-jira-side').show();
-                $('#fmi-show-issue').hide();
-                $('#fmi-start-issue').hide();
-                let selected_val = '(' + (position.r +1)+ ') ' +cell.m;
-                $('#fmi-selected-cell').text(selected_val);
-                var matchFound = false;
-                var matched = null;
-               
-                issues.issues.forEach(function(issue){
-                    console.log(issue.summary + ' ## ' + cell.m);
-                          if (issue.fields.summary == selected_val) {
-                              matchFound = true;
-                              matched = issue;
-                          }
-                });
-                $('#raci-edit-description').val('');
-                if (matchFound) {
-                    console.log(JSON.stringify(matched));
-                    $('#fmi-show-issue').show();
-                    $('#fmi-jira-approve-btn').hide();
-                    $('#x-c1').text(matched.key);
-                    $('#x-c2').text(matched.fields.status.name);
-                    $('#x-c3').text(matched.fields.summary);
-                    $('#x-c4').text(matched.fields.description.content[0].content[0].text);
-                   
-                    $('#x-c5').text(matched.fields.assignee.displayName);
-                    $('#x-c6').text(matched.fields.created);
-                    if (isConsultedForTask(position.r) && matched.fields.status.name != 'Done') {
-                        console.log("Consulted for Task");
-                        $('#fmi-jira-approve-btn').show();
-                    }
-                   
-
-                } else {
-                    $('#fmi-start-issue').show();
-                    $('#raci-edit-summary').val(selected_val);
-                    console.log('No Match found');
-                }
+                clickCell(position.r, position.c, cell.m)
                 return false;
             } else {
                  $('#fmi-jira-side').hide();
@@ -348,6 +324,73 @@ var loadModel = function(sheets, name,user) {
 
 } 
 
+
+var clickCell = function(row, column, cellVal) {
+    $('#fmi-jira-side').show();
+    $('#fmi-show-issue').hide();
+    $('#fmi-start-issue').hide();
+    let selected_val = '(' + (row +1)+ ') ' +cellVal;
+    $('#fmi-selected-cell').text(selected_val);
+    var matchFound = false;
+    var matched = null;
+   
+    issues.issues.forEach(function(issue){
+         
+              if (issue.fields.summary == selected_val) {
+                  matchFound = true; $('#fmi-jira-workflow-tab-cont').removeClass('inactive');
+                  matched = issue;
+              }
+    });
+    $('#raci-edit-description').val('');
+    if (matchFound) {
+        console.log(JSON.stringify(matched));
+        $('#fmi-show-issue').show();
+        $('#fmi-jira-approve-btn').hide();
+        $('#x-c1').text(matched.key);
+        $('#x-c2').text(matched.fields.status.name);
+        $('#x-c3').text(matched.fields.summary);
+        $('#x-c4').text(matched.fields.description.content[0].content[0].text);
+       
+        $('#x-c5').text(matched.fields.assignee.displayName);
+        $('#x-c6').text(matched.fields.created);
+        if (isConsultedForTask(row) && matched.fields.status.name != 'Done') {
+            console.log("Consulted for Task");
+            $('#fmi-jira-approve-btn').show();
+            $('#fmi-jira-approve-btn').on('click', function(ev) {
+                console.log(matched.id);
+                getData('/jira/getTransitions?id='+matched.id, function(data) {
+                    transitions = data.transitions;
+                    console.log(transitions);
+                    var tranId = getTransition("Done");
+                    console.log(tranId);
+                    console.log(currentUser);
+                    postData('/jira/updateIssue', {"id":matched.id,"tid":tranId, "comment":"Approved By " + currentUser.userid }, finishUpdate);
+    
+                });
+         
+            });
+        }
+       
+
+    } else {
+        $('#fmi-start-issue').show();
+        $('#raci-edit-summary').val(selected_val);
+        console.log('No Match found');
+    }
+
+}
+
+var getTransition = function(name) {
+    var retVal = "31"
+    transitions.forEach(function(tran){
+        if (tran.name == name) {
+            retVal =  tran.id;
+            console.log(tran.id);
+        }
+    })
+
+    return retVal;
+}
 //Configure Tasks
 var configureTasks = function() {
 
@@ -445,6 +488,7 @@ var configureTasks = function() {
                     console.log("iS cONSULTED FOR TAsk " + meta.task + " = " + isConsultedForTask(meta.id -1) );
                     if (isConsultedForTask(meta.id -1))
                     {
+                        inProgressTasks = [];
                      inProgressTasks.push({"id": meta.id, "task": meta.task, "type":meta.type});
                     }
 
@@ -454,7 +498,21 @@ var configureTasks = function() {
             var table = new Tabulator("#fmi-jira-task-approvals", {
                 data:inProgressTasks, //assign data to table
                 autoColumns:true, //create columns from data field names
+ 
             });
+            table.on( "rowClick", function(e, row){
+                console.log(row._row.data.id);
+                var selectedRow = row._row.data.id -1;
+                $('#fmi-jira-tabs li a').addClass('inactive'); 
+                $('#fmi-jira-workflow-tab-cont').removeClass('inactive');
+        
+                 $('.fmi-jira-container').hide();
+                $('#fmi-jira-workflow-tab-cont').fadeIn('slow');
+                window.luckysheet.setRangeShow({row:[selectedRow, selectedRow], column:[0,0]});
+              var cellVal =   window.luckysheet.getCellValue(selectedRow , 0, {order:0});
+                clickCell(selectedRow, 0 ,cellVal);
+                
+            })
             console.log(JSON.stringify(inProgressTasks));
         }
 
