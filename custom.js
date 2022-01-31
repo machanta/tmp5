@@ -77,6 +77,11 @@ $(document).ready(function() {
 
  var opsNew = false;   
  var issues = null;
+ var  jiraUsers = [];
+ var  fmiUsers = [];
+ var raciGroups = [];
+ var currentUser = null;
+ var inProgressTasks = [];
  var loadIssues = function(data) {
     //RED.opsProjects = data;
    // console.log(JSON.stringify(data));
@@ -84,6 +89,12 @@ $(document).ready(function() {
   //  data.forEach(function(o){
             
    // });
+}
+
+var loadUsers = function(data) {
+    
+   jiraUsers = data;
+  // console.log(JSON.stringify(jiraUsers)) ;
 }
 // Load Ops Projects
 var loadOpsProjects = function(data) {
@@ -104,7 +115,8 @@ var issueCreated=function(data) {
     if (data) {
         getData('/jira/getIssues', function(data) { 
             issues = data;
-            $('#fmi-show-issue').hide();
+            configureTasks();
+            $('#fmi-show-issue').show();
             $('#fmi-start-issue').hide();
         });
     }
@@ -129,6 +141,7 @@ $('#fmi-ops-project-select').on('change', function(){
     luckysheet.create(options); */
     getData('/jira/getIssues', loadIssues);
     getData('/system/getOpsModels', loadOpsProjects);
+    getData('/jira/getUsers', loadUsers);
     if(upload){
         upload.addEventListener("change", function(evt){
             var files = evt.target.files;
@@ -189,15 +202,18 @@ var loadModel = function(sheets, name,user) {
         hook: {
             
        cellMousedown : function(cell,position,sheet,context) {
-            if (position.c == 0 ) {
+            if (position.c == 0 && sheet.order == 0 && !opsNew) {
+                $('#fmi-jira-side').show();
                 $('#fmi-show-issue').hide();
                 $('#fmi-start-issue').hide();
-                $('#fmi-selected-cell').text(cell.m);
+                let selected_val = '(' + (position.r +1)+ ') ' +cell.m;
+                $('#fmi-selected-cell').text(selected_val);
                 var matchFound = false;
                 var matched = null;
+               
                 issues.issues.forEach(function(issue){
                     console.log(issue.summary + ' ## ' + cell.m);
-                          if (issue.fields.summary == cell.m) {
+                          if (issue.fields.summary == selected_val) {
                               matchFound = true;
                               matched = issue;
                           }
@@ -206,6 +222,7 @@ var loadModel = function(sheets, name,user) {
                 if (matchFound) {
                     console.log(JSON.stringify(matched));
                     $('#fmi-show-issue').show();
+                    $('#fmi-jira-approve-btn').hide();
                     $('#x-c1').text(matched.key);
                     $('#x-c2').text(matched.fields.status.name);
                     $('#x-c3').text(matched.fields.summary);
@@ -213,15 +230,20 @@ var loadModel = function(sheets, name,user) {
                    
                     $('#x-c5').text(matched.fields.assignee.displayName);
                     $('#x-c6').text(matched.fields.created);
-                   
+                    if (isConsultedForTask(position.r) && matched.fields.status.name != 'Done') {
+                        console.log("Consulted for Task");
+                        $('#fmi-jira-approve-btn').show();
+                    }
                    
 
                 } else {
                     $('#fmi-start-issue').show();
-                    $('#raci-edit-summary').val(cell.m);
+                    $('#raci-edit-summary').val(selected_val);
                     console.log('No Match found');
                 }
                 return false;
+            } else {
+                 $('#fmi-jira-side').hide();
             }
        }  , 
        cellUpdated: function(r,c,old,newV) {
@@ -286,7 +308,13 @@ var loadModel = function(sheets, name,user) {
                } catch (e) {if (e===exp ){ret = false;   } else throw e;}  
                    return ret;
                }                        
-        }},
+        },
+        workbookCreateAfter: function(config) {var raciGroups = [];
+            if (!opsNew) {
+                configureTasks();
+            }
+        }
+     },
 
         container: 'luckysheet', //luckysheet is the container id
         showinfobar:false,
@@ -319,6 +347,203 @@ var loadModel = function(sheets, name,user) {
     });
 
 } 
+
+//Configure Tasks
+var configureTasks = function() {
+
+     var racidata =  window.luckysheet.getSheetData({"order":0});
+      var data =  window.luckysheet.getSheetData({"order":1});
+      var userData =  window.luckysheet.getSheetData({"order":2});
+
+      if (racidata) {
+          
+          for (var i=1;i<racidata[0].length; i++) {
+             if (racidata[0][i] != null && racidata[0][i].v != null )
+             raciGroups.push(racidata[0][i].v);
+          }
+          console.log(JSON.stringify(raciGroups));
+      }
+       //create dependency Tree Structure
+       var deplist = [];
+        if (data) {
+            
+            //skip first row
+            for (var i=1 ; i<data.length; i++) {
+                
+                var metadata = {
+                     "id": i+1,
+                      "task": getMetaValue(data,i,0),
+                      "type" : getMetaValue(data,i,1),
+                      "dependency": getMetaValue(data,i,2),
+                      "customfields" : getMetaValue(data,i,3),
+                      "services": getMetaValue(data,i,4),
+                      "started" : false,
+                      "completed" : false
+
+
+                }    
+                if (metadata.task != null && metadata.type != null && metadata.type != 'Grouping')   
+                      deplist.push(metadata);
+            }
+
+            deplist.forEach(function(meta) {
+                var matchFound = false;
+                var matched = null;
+                issues.issues.forEach(function(issue){
+                    
+                          if (issue.fields.summary == ('(' + meta.id + ') ' + meta.task)) {
+                              matchFound = true;
+                              matched = issue;
+                          }
+                });
+                if (matchFound) {
+                    meta.started = true;
+                    if (matched.fields.status.name == 'Done') {
+                        meta.completed = true;
+                    }
+                }
+            })
+
+           // console.log(JSON.stringify(deplist));
+          var deptree = list_to_tree(deplist);
+         // console.log(JSON.stringify(deptree));
+          recurseTree(deptree);
+
+
+        }
+
+        if (userData) {
+            var userList = [];
+            for (var i=1 ; i<userData.length; i++) {
+                 var user = {
+                     "id" : i+1, 
+                     "userid" : getMetaValue(userData,i,0),
+                     "email" : getMetaValue(userData,i,1),
+                     "isAdmin" : getMetaValue(userData,i,2) != null ? true : false,
+                     "entitlements" : getUserEntitlements(userData, i, 3),
+                 }
+                if (user.userid != null ) {
+                 jiraUsers.forEach(function(juser){
+                      if (juser.emailAddress == user.email) {
+                          user.jiraID = juser.accountId;
+                          user.jiraURL = juser.self;
+                      }
+                }) ;
+                
+                 userList.push(user);
+                 if (RED.settings.user.username == user.userid) {
+                        currentUser = user;
+                 }
+               }
+            }
+
+            
+            fmiUsers = userList;
+
+            deplist.forEach(function(meta) {
+                if (!meta.completed && meta.started) {
+                    console.log("iS cONSULTED FOR TAsk " + meta.task + " = " + isConsultedForTask(meta.id -1) );
+                    if (isConsultedForTask(meta.id -1))
+                    {
+                     inProgressTasks.push({"id": meta.id, "task": meta.task, "type":meta.type});
+                    }
+
+
+                }
+            });
+            var table = new Tabulator("#fmi-jira-task-approvals", {
+                data:inProgressTasks, //assign data to table
+                autoColumns:true, //create columns from data field names
+            });
+            console.log(JSON.stringify(inProgressTasks));
+        }
+
+}
+var recurseTree = function(tree) {
+    tree.forEach(function(meta) {
+       if (meta.started) {
+           window.luckysheet.setCellFormat(meta.id -1, 0,'bg', '#669900', {order:0});
+          // inProgressTasks.push(meta);
+       } else {
+        window.luckysheet.setCellFormat(meta.id -1, 0,'bg', '#3399CC', {order:0});
+       }     
+       
+       if (meta.completed) {
+        window.luckysheet.setCellFormat(meta.id -1, 0,'bg', '#cc9966', {order:0});
+           recurseTree(meta.children);
+       }
+    });
+}
+var getMetaValue = function(data,row, column) {
+    var retVal = null;
+    if (data[row][column] != null) {
+       retVal = data[row][column].v
+    }
+    return retVal;
+}
+
+var getUserEntitlements = function (userData, row, colStart) {
+    var entitlements = [];
+       for (var k=colStart; k< userData[0].length; k++) {
+           if (userData[0][k] != null) {
+               if (userData[row][k] != null) {
+                if (userData[row][k].v != null) 
+                   entitlements.push(userData[0][k].v);
+               }
+           }
+       }
+       return entitlements;
+}
+
+var isConsultedForTask= function(row) {
+    ///TO DO Fix this hard coding
+    var isConsulted = false;
+       for(var k=1; k<30; k++) {
+           let val =window.luckysheet.getCellValue(row , k, {order:0});
+            if ( val != null && (val == 'C' || val == 'A')  &&  currentUser != null) {
+                currentUser.entitlements.forEach(function(entl) {
+                    if (entl == raciGroups[k-1]) 
+                      isConsulted = true;
+                })
+            }   
+       }
+        return isConsulted;
+}
+
+var isResponsibleForTask= function(position) {
+    ///TO DO Fix this hard coding
+    var isConsulted = false;
+       for(var k=1; k<30; k++) {
+           let val =window.luckysheet.getCellValue(position.r, k, {order:0});
+            if ( val != null && val == 'R' &&  currentUser != null) {
+                currentUser.entitlements.forEach(function(entl) {
+                    if (entl == raciGroups[k-1]) 
+                      isConsulted = true;
+                })
+            }   
+       }
+        return isConsulted;
+}
+//create Tree structure
+function list_to_tree(list) {
+    var map = {}, node, roots = [], i;
+    
+    for (i = 0; i < list.length; i += 1) {
+      map[list[i].id] = i; // initialize the map
+      list[i].children = []; // initialize the children
+    }
+    
+    for (i = 0; i < list.length; i += 1) {
+      node = list[i];
+      if (node.dependency !== 0) {
+        // if you have dangling branches check that map[node.parentId] exists
+        list[map[node.dependency]].children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    return roots;
+  }
     //finish Save
  var  finishSaved = function(data) {
     $('#save-raci-status').text("Model sucessfully saved!");

@@ -4269,6 +4269,13 @@ ul.notifications {
   color: #212121;
   font-weight: 300;
 }
+.fmi-jira-header-txt{
+  margin:30px;
+  padding: 30px;
+  font-size: 20px;
+  color: #212121;
+  font-weight: 300;
+}
 .luckysheet-wa-editor {
 height: 32px;
 background: #3c5977;
