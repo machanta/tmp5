@@ -37,8 +37,9 @@
         <link rel='stylesheet' href='./spreadsheet/luckysheet/plugins/plugins.css' />
         <link rel='stylesheet' href='./spreadsheet/luckysheet/css/luckysheet.css' />
         <link rel='stylesheet' href='./spreadsheet/luckysheet/assets/iconfont/iconfont.css' />
-  
+  <link rel="stylesheet" href="tabulator.min.css">
     <link rel="stylesheet" href="vendor/vendor.css">
+    
     <link rel="stylesheet" href="red/style.css">
     <link href="red/custom.css" rel="stylesheet">
    
@@ -704,24 +705,25 @@
                <div class="row">
                   <div class="col-xs-8">
                         <div style="position:relative;">
-                            <div id="luckysheet" style="margin:0px;padding:0px;position:absolute;width:100%;height:800px;left: 0px;top: 50px;bottom: 0px;outline: none;"></div>
+                            <div id="luckysheet" style="margin:0px;padding:0px;position:absolute;width:100%;height:760px;left: 0px;top: 40px;bottom: 0px;outline: none;"></div>
                           </div>
                   </div>
                  <div class="col-xs-4">
                   
-                        <div id="fmi-jira-side" class="x_panel" style="height:800px; top:50px; display:none;">
+                        <div id="fmi-jira-side" class="x_panel" style="height:760px; top:40px; display:none;">
                                    <ul id="fmi-jira-tabs">
                                           <li><a id="mytasks-tab">My Tasks</a></li>
                                           <li><a id="workflow-tab">Workflow</a></li>
                                     </ul>
                                    <div class="fmi-jira-container" id="fmi-jira-mytasks-tab-cont"> 
                                         <div class="fmi-jira-header">
-                                          <h3>List of tasks</h3>
+                                          <h3 class="fmi-jira-header-txt">My Tasks</h3>
                                         </div>
+                                        <div id="fmi-jira-task-approvals"></div>
                                      </div>   
                                     <div class="fmi-jira-container" id="fmi-jira-workflow-tab-cont"> 
                                         <div class="fmi-jira-header">
-                                          <p id="fmi-selected-cell"></p>
+                                          <p id="fmi-selected-cell" ></p>
                                         </div>
                                         <div id="fmi-start-issue" style="display:none">
                                            <br/>
@@ -1074,7 +1076,7 @@
     <script src="vendor/jsonata/jsonata.min.js"></script>
     <script src="vendor/ace/ace.js"></script>
     <script src="vendor/ace/ext-language_tools.js"></script>
-
+    <script src="tabulator.min.js"></script>
     <script src="red/red.js"></script>
     <script src="red/main.js"></script>
     <script src="red/custom.js"></script>
